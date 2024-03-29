@@ -1,0 +1,217 @@
+---
+title: "Bankruptcy Prediction"
+author: "Giulio Bellini"
+format: html
+editor: visual
+---
+
+## Exploratory Data Analysis
+
+```{r}
+# importing data from Excel
+library(readxl)
+#
+library(dplyr)
+```
+
+A first step in the exploration analysis, we load the data from the workplace and convert it into a dataframe.
+
+```{r}
+rm(list=ls())  #clear environment
+
+df <- as.data.frame(read_excel("data.xlsx"))
+#View(df)
+```
+
+Looking at the dimensions of the dataset, we can see that it contains 6819 samples (companies) and 95 features. The features are all numerical and represent accounting values and ratios of the company to which they refer. The purpose of this research is to see whether the variables and the interactions between them can accurately predict the target variable, i.e. whether the company has gone bankrupt (Y=1) or not (Y=0).
+
+The target variable is highly imbalanced, with only 220 bankruptcy cases, representing 3.2% of the total.
+
+```{r}
+cat("The dimensions of the dataset is: ")
+cat(dim(df), "\n")
+
+cat("The distribution of the target variable is: ")
+cat(table(df$`Bankrupt?`), "\n")
+
+cat('The proportion of positiove cases is: ')
+cat(round(nrow(df[df$`Bankrupt?`==1,])/nrow(df), 3))
+```
+
+The table below shows three main descriptive statistics (type, mean, standard deviation and number of missing values) for the dependent variable and each of the independent variables.
+
+All variables are numeric. This is an advantage for modelling as there is no need to encode categorical variables. Furthermore, there are no missing values in the dataset, so there is no need to impute values in the data handling phase.
+
+A closer look at the table shows that some variables have very small standard deviations. This means that the companies under consideration have very similar values for these variables or that the classes are highly imbalance.
+
+Finally, the variable *"Net Income Flag"* has a standard deviation equal to 0, as it takes the value 1 for all samples (all companies have negative net income for the last two years). This variable does not help in classification and must be removed as it causes errors in the calculation of correlations, PCA, etc.
+
+```{r}
+# Calculate descriptive statistics
+# Assuming 'df' is your dataframe
+
+# Define a function to calculate mean for numeric columns only
+mean_numeric <- function(x) {
+  if(is.numeric(x)) mean(x, na.rm = TRUE) else NA
+}
+
+# Define a function to calculate standard deviation for numeric columns only
+sd_numeric <- function(x) {
+  if(is.numeric(x)) sd(x, na.rm = TRUE) else NA
+}
+
+# Calculate the statistics
+stats <- data.frame(
+  Feature = names(df),
+  DataType = sapply(df, class),
+  Mean = sapply(df, mean_numeric),
+  StdDev = sapply(df, sd_numeric),
+  NumMissing = sapply(df, function(x) sum(is.na(x)))
+)
+
+# Convert to a tibble for nicer printing, if desired
+stats <- as_tibble(stats)
+
+# View the result
+print(stats)
+
+```
+
+```{r}
+df <- subset(df, select= -`Net Income Flag`)
+```
+
+```{r}
+original_names <- colnames(df)
+modified_names <- list()
+
+for (index in seq(length(colnames(df)))) {
+  if (index == 1) {
+    modified_names <- c(modified_names, 'Y')
+  }
+  else {
+    modified_names <- c(modified_names, paste0('X',as.character(index-1)))
+  }
+  
+}
+
+colnames(df) <- modified_names
+```
+
+```{r}
+library(corrplot)
+
+cor_matrix <- cor(df)
+
+# Plot correlation matrix
+par(mar=c(2,2,2,2))  # Adjust margin to fit long variable names
+
+col <- colorRampPalette(c("blue", "white", "red"))(200)
+
+corrplot(cor_matrix, method = "color", type = "upper",
+         tl.pos = "n",
+         diag = FALSE, # Exclude diagonal
+         order = "hclust", # Order variables by hierarchical clustering
+         tl.col = "black", # Set text label color
+         #tl.cex = 0,
+         col=col) # Adjust text label size
+
+# Adjust plot size
+options(repr.plot.width=7, repr.plot.height=7)
+```
+
+```{r}
+library(corrplot)
+
+df1 <- df
+#colnames(df1) <- original_names
+
+# Assuming `df` is your dataframe containing the features
+
+# Step 1: Calculate the full correlation matrix
+cor_matrix <- cor(df1, use = "pairwise.complete.obs")
+
+# Step 2: Identify features with correlation > 0.3 or < -0.3 with any other feature
+# Exclude diagonal elements by setting them to 0 as we don't consider self-correlation
+diag(cor_matrix) <- 0
+high_cor_features <- which(apply(cor_matrix, 1, function(x) any(x > 0.9 | x < -0.9)), arr.ind = TRUE)
+
+# Step 3: Subset the correlation matrix
+sub_cor_matrix <- cor_matrix[high_cor_features, high_cor_features]
+
+# Define a custom color sequence from red to blue
+col <- colorRampPalette(c("blue", "white", "red"))(200)
+
+# Step 4: Plot the subsetted correlation matrix
+corrplot(sub_cor_matrix, method = "color", type="upper",
+         order = "hclust", # Cluster variables
+         addrect = 3, # Adjust the number of rectangles for clustering as needed
+         diag= FALSE,
+         tl.col = "black", tl.srt = 45, tl.cex = 0.5, # Adjust text appearance
+         col = col) # Use the custom color sequence
+
+# Optional: Add a title
+title("Subset Correlation Matrix", line = 3)
+options(repr.plot.width=7, repr.plot.height=7)
+```
+
+```{r}
+library(ggplot2)
+# Perform PCA
+pca_result <- prcomp(subset(df, select=-Y), scale. = TRUE)
+
+# Extract the first two principal components
+pc1 <- pca_result$x[, 1]
+pc2 <- pca_result$x[, 2]
+
+# Create a dataframe for plotting
+pca_df <- data.frame(PC1 = pc1, PC2 = pc2, Y=df$Y)
+
+# Plot the first two principal components
+ggplot(pca_df, aes(x = PC1, y = PC2, color=Y)) +
+  geom_point(alpha=0.7) +
+  labs(x = "Principal Component 1", y = "Principal Component 2", title = "PCA: First Two Principal Components")
+```
+
+```{r}
+library(Rtsne)
+
+# Perform t-SNE
+tsne_result <- Rtsne(subset(df, select=-Y))
+
+tsne_df <- data.frame(tsne_result$Y, Y= df$Y)
+
+# Plot t-SNE result
+ggplot(tsne_df, aes(x = X1, y = X2, color = Y)) +
+  geom_point(alpha=0.7) +
+  labs(title = "t-SNE Plot")
+```
+
+```{r}
+# Load the caret package
+library(caret)
+
+# Create a stratified random sample to maintain proportion of target variable
+set.seed(123) # Set seed for reproducibility
+trainIndex <- createDataPartition(df$`Bankrupt?`, p = 0.8, 
+                                  list = FALSE, 
+                                  times = 1)
+
+# Split the data into training and testing sets
+trainSet <- df[trainIndex, ]
+testSet <- df[-trainIndex, ]
+
+# Now, trainSet contains 80% of the data, and testSet contains 20%, 
+# with the proportion of the target variable's classes maintained.
+table(trainSet)
+
+```
+
+```{r}
+#Exporting train and test sets
+library(openxlsx)
+
+write.xlsx(trainSet, file = "train.xlsx", sheetName = "train", rowNames = FALSE)
+
+write.xlsx(testSet, file = "test.xlsx", sheetName = "test", rowNames = FALSE)
+```
