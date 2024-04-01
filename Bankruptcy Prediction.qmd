@@ -3,6 +3,8 @@ title: "Bankruptcy Prediction"
 author: "Giulio Bellini"
 format: html
 editor: visual
+execute:
+  warning: false
 ---
 
 ## Exploratory Data Analysis
@@ -12,6 +14,10 @@ editor: visual
 library(readxl)
 #
 library(dplyr)
+#
+library(caret)
+#
+library(DT)
 ```
 
 A first step in the exploration analysis, we load the data from the workplace and convert it into a dataframe.
@@ -23,7 +29,7 @@ df <- as.data.frame(read_excel("data.xlsx"))
 #View(df)
 ```
 
-Looking at the dimensions of the dataset, we can see that it contains 6819 samples (companies) and 95 features. The features are all numerical and represent accounting values and ratios of the company to which they refer. The purpose of this research is to see whether the variables and the interactions between them can accurately predict the target variable, i.e. whether the company has gone bankrupt (Y=1) or not (Y=0).
+Looking at the dimensions of the dataset, we can see that it contains 6819 samples (companies) , 95 independent variables and 1 dependent variable. The features are all numerical and represent accounting values and ratios of the company to which they refer. The purpose of this research is to see whether the variables and the interactions between them can accurately predict the target variable, i.e. whether the company has gone bankrupt (Y=1) or not (Y=0).
 
 The target variable is highly imbalanced, with only 220 bankruptcy cases, representing 3.2% of the total.
 
@@ -70,19 +76,17 @@ stats <- data.frame(
 )
 
 # Convert to a tibble for nicer printing, if desired
-stats <- as_tibble(stats)
-
-# View the result
-print(stats)
-
+datatable(stats, options = list(pageLength = 5))
 ```
 
 ```{r}
+#Removing zero variance variable "Net Income Flag"
 df <- subset(df, select= -`Net Income Flag`)
 ```
 
 ```{r}
-original_names <- colnames(df)
+
+"original_names <- colnames(df)
 modified_names <- list()
 
 for (index in seq(length(colnames(df)))) {
@@ -96,17 +100,29 @@ for (index in seq(length(colnames(df)))) {
 }
 
 colnames(df) <- modified_names
+"
 ```
 
-```{r}
+```{r,fig.width=10, fig.height=10}
 library(corrplot)
+par(mfrow = c(1, 2))
 
 cor_matrix <- cor(df)
+Y_cor <-cor(df[, names(df) != "Bankrupt?"], df[["Bankrupt?"]], use = "complete.obs")
+Y_cor_sorted <- sort(Y_cor, decreasing=TRUE)
+
+Y_cor_matrix <- matrix(Y_cor_sorted, nrow = length(Y_cor), ncol = 1, dimnames = list(rownames(Y_cor), c("Bankrupt?")))
+
+# Adjust plot size
+options(repr.plot.width=14, repr.plot.height=30)
 
 # Plot correlation matrix
-par(mar=c(2,2,2,2))  # Adjust margin to fit long variable names
+par(mar=c(1,1,1,1))  # Adjust margin to fit long variable names
 
 col <- colorRampPalette(c("blue", "white", "red"))(200)
+
+corrplot(Y_cor_matrix, is.corr = FALSE, method = "color",
+       tl.col = "black", col=col, tl.cex = 0.3, tl.srt=0, cl.pos="n")
 
 corrplot(cor_matrix, method = "color", type = "upper",
          tl.pos = "n",
@@ -115,12 +131,9 @@ corrplot(cor_matrix, method = "color", type = "upper",
          tl.col = "black", # Set text label color
          #tl.cex = 0,
          col=col) # Adjust text label size
-
-# Adjust plot size
-options(repr.plot.width=7, repr.plot.height=7)
 ```
 
-```{r}
+```{r,fig.width=10, fig.height=10}
 library(corrplot)
 
 df1 <- df
@@ -142,44 +155,70 @@ sub_cor_matrix <- cor_matrix[high_cor_features, high_cor_features]
 # Define a custom color sequence from red to blue
 col <- colorRampPalette(c("blue", "white", "red"))(200)
 
-# Step 4: Plot the subsetted correlation matrix
-corrplot(sub_cor_matrix, method = "color", type="upper",
-         order = "hclust", # Cluster variables
-         addrect = 3, # Adjust the number of rectangles for clustering as needed
-         diag= FALSE,
-         tl.col = "black", tl.srt = 45, tl.cex = 0.5, # Adjust text appearance
-         col = col) # Use the custom color sequence
+# Step 4: Plot the subsetted correlation mat
+```
 
-# Optional: Add a title
-title("Subset Correlation Matrix", line = 3)
-options(repr.plot.width=7, repr.plot.height=7)
+A key step is to divide the data into your sets: the training set and the test set.
+
+-   The ***training set*** will be used for multicollinearity testing, dimensionality reduction, selecting the method for generating synthetic data, and training the classification models.
+
+-   The ***test set*** is used to approximate the performance of the models on out-of-sample data.
+
+It is important to separate the training and test sets before performing any data transformation, analysis or modelling to avoid data leakage between the test and training sets, which could lead to a positive bias (overestimation) in model performance.
+
+The *X_train* and *X_test* sets are then scaled separately to avoid information leakage. Scaling the features so that they have a mean of 0 and a standard deviation of 1 is an important step because some algorithms are affected by the order of magnitude of the variables.
+
+For example, in P**rincipal Component Analysis** (PCA), if a feature has a larger variance just because of its order of magnitude, it will have a larger effect on the direction of the principal component without any real motivation, leading to worse class separability in lower dimensions.
+
+Another example is the **K-Nearest Neighbours** (KNN) algorithm, which is used both as a classification model and in other algorithms such as Isomap and SMOTE. In KNN, the use of unscaled features results in a completely different fit, as higher order variables have a greater impact on the distance between data points and thus on the selection of the k-nearest neighbours.
+
+```{r}
+# Create a stratified random sample to maintain proportion of target variable
+set.seed(123) # Set seed for reproducibility
+trainIndex <- createDataPartition(df$`Bankrupt?`, p = 0.8, 
+                                  list = FALSE, 
+                                  times = 1)
+
+# Split the data into training and testing sets
+# Split independent and dependent variables
+# Scale sets separately to avoid data leakage
+X_train <- as.data.frame(scale(select(df[trainIndex, ], -`Bankrupt?`)))
+Y_train <- df[trainIndex, ]$`Bankrupt?`
+
+X_test <- as.data.frame(scale(select(df[-trainIndex, ], -`Bankrupt?`)))
+Y_test <- df[-trainIndex, ]$`Bankrupt?`
+
+# Now, train set contains 80% of the data, and test set contains 20%, 
+# with the proportion of the target variable's classes maintained.
 ```
 
 ```{r}
 library(ggplot2)
 # Perform PCA
-pca_result <- prcomp(subset(df, select=-Y), scale. = TRUE)
+pca_result <- prcomp(X_train) #, scale. = TRUE
 
 # Extract the first two principal components
 pc1 <- pca_result$x[, 1]
 pc2 <- pca_result$x[, 2]
 
 # Create a dataframe for plotting
-pca_df <- data.frame(PC1 = pc1, PC2 = pc2, Y=df$Y)
+pca_df <- data.frame(PC1 = pc1, PC2 = pc2, Y=factor(Y_train, labels = c("Non Bankrupt", "Bankrupt")))
 
 # Plot the first two principal components
 ggplot(pca_df, aes(x = PC1, y = PC2, color=Y)) +
   geom_point(alpha=0.7) +
-  labs(x = "Principal Component 1", y = "Principal Component 2", title = "PCA: First Two Principal Components")
+  labs(x = "Principal Component 1", y = "Principal Component 2", color='Y',title = "PCA: First Two Principal Components")
 ```
 
 ```{r}
+# warning: false
+#| eval: false
 library(Rtsne)
 
 # Perform t-SNE
-tsne_result <- Rtsne(subset(df, select=-Y))
+tsne_result <- Rtsne(X_train)
 
-tsne_df <- data.frame(tsne_result$Y, Y= df$Y)
+tsne_df <- data.frame(tsne_result$Y, Y= factor(Y_train, labels = c("Non Bankrupt", "Bankrupt")))
 
 # Plot t-SNE result
 ggplot(tsne_df, aes(x = X1, y = X2, color = Y)) +
@@ -188,30 +227,11 @@ ggplot(tsne_df, aes(x = X1, y = X2, color = Y)) +
 ```
 
 ```{r}
-# Load the caret package
-library(caret)
-
-# Create a stratified random sample to maintain proportion of target variable
-set.seed(123) # Set seed for reproducibility
-trainIndex <- createDataPartition(df$`Bankrupt?`, p = 0.8, 
-                                  list = FALSE, 
-                                  times = 1)
-
-# Split the data into training and testing sets
-trainSet <- df[trainIndex, ]
-testSet <- df[-trainIndex, ]
-
-# Now, trainSet contains 80% of the data, and testSet contains 20%, 
-# with the proportion of the target variable's classes maintained.
-table(trainSet)
-
-```
-
-```{r}
+#| eval: false
 #Exporting train and test sets
-library(openxlsx)
+#library(openxlsx)
 
-write.xlsx(trainSet, file = "train.xlsx", sheetName = "train", rowNames = FALSE)
+#write.xlsx(trainSet, file = "train.xlsx", sheetName = "train", rowNames = FALSE)
 
-write.xlsx(testSet, file = "test.xlsx", sheetName = "test", rowNames = FALSE)
+#write.xlsx(testSet, file = "test.xlsx", sheetName = "test", rowNames = FALSE)
 ```
