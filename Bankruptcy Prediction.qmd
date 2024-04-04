@@ -10,6 +10,7 @@ execute:
 ## Exploratory Data Analysis
 
 ```{r}
+#| echo: false
 # importing data from Excel
 library(readxl)
 #
@@ -18,7 +19,12 @@ library(dplyr)
 library(caret)
 #
 library(DT)
+#
+library(ggplot2)
+theme_update(plot.title = element_text(hjust = 0.5))
 ```
+
+### Data Handling
 
 A first step in the exploration analysis, we load the data from the workplace and convert it into a dataframe.
 
@@ -34,6 +40,7 @@ Looking at the dimensions of the dataset, we can see that it contains 6819 sampl
 The target variable is highly imbalanced, with only 220 bankruptcy cases, representing 3.2% of the total.
 
 ```{r}
+#| echo: false
 cat("The dimensions of the dataset is: ")
 cat(dim(df), "\n")
 
@@ -54,7 +61,6 @@ Finally, the variable *"Net Income Flag"* has a standard deviation equal to 0, a
 
 ```{r}
 # Calculate descriptive statistics
-# Assuming 'df' is your dataframe
 
 # Define a function to calculate mean for numeric columns only
 mean_numeric <- function(x) {
@@ -68,7 +74,7 @@ sd_numeric <- function(x) {
 
 # Calculate the statistics
 stats <- data.frame(
-  Feature = names(df),
+  #Feature = names(df),
   DataType = sapply(df, class),
   Mean = sapply(df, mean_numeric),
   StdDev = sapply(df, sd_numeric),
@@ -85,7 +91,12 @@ df <- subset(df, select= -`Net Income Flag`)
 ```
 
 ```{r}
+#|echo: false
+hist(df$`Inventory Turnover Rate (times)`)
+```
 
+```{r}
+#| echo: false
 "original_names <- colnames(df)
 modified_names <- list()
 
@@ -103,64 +114,9 @@ colnames(df) <- modified_names
 "
 ```
 
-```{r,fig.width=10, fig.height=10}
-library(corrplot)
-par(mfrow = c(1, 2))
+A key step is to divide the data into two sets: the training set and the test set.
 
-cor_matrix <- cor(df)
-Y_cor <-cor(df[, names(df) != "Bankrupt?"], df[["Bankrupt?"]], use = "complete.obs")
-Y_cor_sorted <- sort(Y_cor, decreasing=TRUE)
-
-Y_cor_matrix <- matrix(Y_cor_sorted, nrow = length(Y_cor), ncol = 1, dimnames = list(rownames(Y_cor), c("Bankrupt?")))
-
-# Adjust plot size
-options(repr.plot.width=14, repr.plot.height=30)
-
-# Plot correlation matrix
-par(mar=c(1,1,1,1))  # Adjust margin to fit long variable names
-
-col <- colorRampPalette(c("blue", "white", "red"))(200)
-
-corrplot(Y_cor_matrix, is.corr = FALSE, method = "color",
-       tl.col = "black", col=col, tl.cex = 0.3, tl.srt=0, cl.pos="n")
-
-corrplot(cor_matrix, method = "color", type = "upper",
-         tl.pos = "n",
-         diag = FALSE, # Exclude diagonal
-         order = "hclust", # Order variables by hierarchical clustering
-         tl.col = "black", # Set text label color
-         #tl.cex = 0,
-         col=col) # Adjust text label size
-```
-
-```{r,fig.width=10, fig.height=10}
-library(corrplot)
-
-df1 <- df
-#colnames(df1) <- original_names
-
-# Assuming `df` is your dataframe containing the features
-
-# Step 1: Calculate the full correlation matrix
-cor_matrix <- cor(df1, use = "pairwise.complete.obs")
-
-# Step 2: Identify features with correlation > 0.3 or < -0.3 with any other feature
-# Exclude diagonal elements by setting them to 0 as we don't consider self-correlation
-diag(cor_matrix) <- 0
-high_cor_features <- which(apply(cor_matrix, 1, function(x) any(x > 0.9 | x < -0.9)), arr.ind = TRUE)
-
-# Step 3: Subset the correlation matrix
-sub_cor_matrix <- cor_matrix[high_cor_features, high_cor_features]
-
-# Define a custom color sequence from red to blue
-col <- colorRampPalette(c("blue", "white", "red"))(200)
-
-# Step 4: Plot the subsetted correlation mat
-```
-
-A key step is to divide the data into your sets: the training set and the test set.
-
--   The ***training set*** will be used for multicollinearity testing, dimensionality reduction, selecting the method for generating synthetic data, and training the classification models.
+-   The ***training set*** will be used for correlation analysis, multicollinearity testing, dimensionality reduction, selecting the method for generating synthetic data, and training the classification models.
 
 -   The ***test set*** is used to approximate the performance of the models on out-of-sample data.
 
@@ -168,7 +124,7 @@ It is important to separate the training and test sets before performing any dat
 
 The *X_train* and *X_test* sets are then scaled separately to avoid information leakage. Scaling the features so that they have a mean of 0 and a standard deviation of 1 is an important step because some algorithms are affected by the order of magnitude of the variables.
 
-For example, in P**rincipal Component Analysis** (PCA), if a feature has a larger variance just because of its order of magnitude, it will have a larger effect on the direction of the principal component without any real motivation, leading to worse class separability in lower dimensions.
+For example, in **Principal Component Analysis** (PCA), if a feature has a larger variance just because of its order of magnitude, it will have a larger effect on the direction of the principal component without any real motivation, leading to worse class separability in lower dimensions.
 
 Another example is the **K-Nearest Neighbours** (KNN) algorithm, which is used both as a classification model and in other algorithms such as Isomap and SMOTE. In KNN, the use of unscaled features results in a completely different fit, as higher order variables have a greater impact on the distance between data points and thus on the selection of the k-nearest neighbours.
 
@@ -191,6 +147,130 @@ Y_test <- df[-trainIndex, ]$`Bankrupt?`
 # Now, train set contains 80% of the data, and test set contains 20%, 
 # with the proportion of the target variable's classes maintained.
 ```
+
+### Correlation Analysis
+
+The Table below show the **correlation** of each independent variable with the dependent variable "Bankrupt?".
+
+In the graph on the right, the features are sorted in descending order according to their correlation coefficient with the independent variable.
+
+It can be seen that variables related to the amount of liabilities relative to equity and assets are *positively* correlated with corporate bankruptcy. This makes sense from a financial point of view, since excessive use of debt, especially short-term debt, increases the risk of insolvency. Excessive expenses relative to asset value and excessive reliance on equity relative to long-term debt are also positively correlated with bankruptcy.
+
+Variables related to profit, efficiency, such as ROA (return on assets) and share value are *negatively* correlated with company failure. Again, this makes financial sense. A company with high profitability is able to pay its debts on time, make investments for growth and face sudden expenses without running the risk of financial distress.
+
+The correlation coefficients of the independent variables are mostly below 0.3 in absolute terms. Therefore, the features are only weakly positively correlated with the dependent variable. This is a common occurrence in economics and finance, as many factors affect the economic system. However, this does not necessarily mean that these variables and their interactions lack predictive power.
+
+```{r}
+# Perforing Pearson Correlation Test on the Training Set
+# Defining empty dataframe to store the results: corr coefficients and p-values
+test_results <- data.frame()
+
+# iterate along the columns and compute correlation coefficent and p-value for each independent variable with the dependent variable
+for (col in 1:(ncol(X_train) -1)) {
+  result <- cor.test(Y_train, X_train[, col])
+  result_df <- data.frame(index=colnames(X_train)[col], coeff=round(result$estimate,4), pvalue=round(result$p.value, 5))
+  test_results <- rbind(test_results, result_df)
+}
+# Setting features names as row names
+row.names(test_results) <- test_results$index
+test_results$index <- NULL
+
+# Creating interactive table to visualize the results
+# Features are sorted in descending order based on the correlation coefficient
+datatable(test_results[order(-test_results$coeff),], options = list(pageLength = 5))
+```
+
+Figure shows the correlation matrix of the independent variables. The names of the variables have been omitted to avoid cluttering the graph. The Figure shows the correlation matrix of the variables that have a correlation coefficient greater than or equal to 0.9 in absolute terms with any other independent variable.
+
+In both correlation matrices, the variables were rearranged using hierarchical clustering to identify possible clusters of highly correlated variables. Hierarchical clustering was applied to the distance matrix obtained from the correlation matrix, where distances were calculated as $1 - |correlationCoeff|$. The features were then reordered so that variables belonging to the same cluster were positioned next to each other in the matrix. This procedure makes the correlation matrix easier to interpret.
+
+In Figure we can see two main clusters: one of positively correlated features in the centre of the plot and one of negatively correlated features at the top. Other smaller clusters are also visible. Looking at Figure, these two clusters are even more obvious.
+
+```{r}
+library(corrplot)
+#par(mfrow = c(1, 2))
+
+cor_matrix <- cor(X_train)
+Y_cor <-cor(X_train, Y_train, use = "complete.obs")
+index_order <- order(Y_cor, decreasing=TRUE)
+Y_cor_sorted <- Y_cor[index_order]
+Y_cor_sorted_names <- rownames(Y_cor)[index_order]
+
+Y_cor_matrix <- matrix(Y_cor_sorted, nrow = length(Y_cor_sorted), ncol = 1, dimnames = list(Y_cor_sorted_names, c("Bankrupt?")))
+
+# Adjust plot size
+#options(repr.plot.width=14, repr.plot.height=30)
+
+# Plot correlation matrix
+#par(mar=c(2,2,2,2))  # Adjust margin to fit long variable names
+
+col <- colorRampPalette(c("blue", "white", "red"))(200)
+
+#corrplot(Y_cor_matrix, is.corr = FALSE, method = "color",
+       #tl.col = "black", col=col, tl.cex = 0.6, tl.srt=0, cl.pos="n")
+
+corrplot(cor_matrix, method = "color", type = "upper",
+         tl.pos = "n",
+         diag = FALSE, # Exclude diagonal
+         order = "hclust", # Order variables by hierarchical clustering
+         tl.col = "black", # Set text label color
+         #tl.cex = 0,
+         col=col)# Adjust text label size 
+
+#title("Correlation Matrix")
+```
+
+Some features are perfectly correlated:
+
+$Corr(Current\ Liability\ to\ Equity,\ Current\ Liabilities/Equity) = 1$
+
+$Corr(Current\ Liabilities\ to\ Liability,\ Current\ Liabilities/Liability) = 1$
+
+$Corr(Debt\ Ratio, Net\ Worth/Assets) = -1$
+
+These variables seem to measure the same quantity, even if their names are slightly different. For each pair of perfectly correlated variables, it is necessary to select only one, as the other would complicate the models without providing any useful information.
+
+Other variables are highly correlated, even if not perfectly. These variables express very similar accounting aspects, differing only in small details. Some examples are:
+
+$Corr(Operating\ Gross\ Margin,\ Gross\ Profit\ to\ Sales) = 0.999$
+
+$Corr(Pre-tax\ net\ Interest\ Rate,\ After-tax\ net\ Interest\ Rate) = 0.987$
+
+$Corr(ROA(A)\ before\ interest,\ Net\ Income\ to\ Total\ Assets) = 0.96$
+
+Unlike in the case of perfectly correlated variables, in this case it is not the best choice to choose one random variable to keep and disregard the other, because we may miss important information, such as interactions with other variables. It is therefore necessary to proceed with further analysis.
+
+```{r, fig.width=15, fig.height=15}
+library(corrplot)
+
+# Identify features with correlation > 0.9 or < -0.9 with any other feature
+# Exclude diagonal elements by setting them to 0 as we don't consider self-correlation
+diag(cor_matrix) <- 0
+high_cor_features <- which(apply(cor_matrix, 1, function(x) any(x > 0.9 | x < -0.9)), arr.ind = TRUE)
+
+# Subset the correlation matrix
+sub_cor_matrix <- cor_matrix[high_cor_features, high_cor_features]
+
+# Define a custom color sequence from blue to red
+col <- colorRampPalette(c("blue", "white", "red"))(200)
+
+# Plot the subsetted correlation matrix
+#par(mar = c(0,0, 0, 0))
+
+#options(repr.plot.width=2, repr.plot.height=3)
+
+corrplot(sub_cor_matrix, method = "color", type="upper",
+         order = "hclust", # Cluster variables
+         addrect = 3, # Adjust the number of rectangles for clustering as needed
+         diag= FALSE,
+         tl.col = "black", tl.srt = 45, tl.cex = 0.75, # Adjust text appearance
+         col = col) # Use the custom color sequence
+
+# Add a title
+#title("Subset Correlation Matrix")
+```
+
+## Dimensionality Reduction
 
 ```{r}
 library(ggplot2)
