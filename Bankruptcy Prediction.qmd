@@ -13,7 +13,7 @@ execute:
 #| echo: false
 # importing data from Excel
 library(readxl)
-#
+# 
 library(dplyr)
 #
 library(caret)
@@ -29,10 +29,11 @@ theme_update(plot.title = element_text(hjust = 0.5))
 A first step in the exploration analysis, we load the data from the workplace and convert it into a dataframe.
 
 ```{r}
-rm(list=ls())  #clear environment
+# Clear environment
+rm(list=ls())
 
+# Import Data
 df <- as.data.frame(read_excel("data.xlsx"))
-#View(df)
 ```
 
 Looking at the dimensions of the dataset, we can see that it contains 6819 samples (companies) , 95 independent variables and 1 dependent variable. The features are all numerical and represent accounting values and ratios of the company to which they refer. The purpose of this research is to see whether the variables and the interactions between them can accurately predict the target variable, i.e. whether the company has gone bankrupt (Y=1) or not (Y=0).
@@ -68,20 +69,16 @@ sd_numeric <- function(x) {
   if(is.numeric(x)) sd(x, na.rm = TRUE) else NA
 }
 
-# Calculate the statistics
+# Calculate the statistics and store them in a data frame
 stats <- data.frame(
-  #Feature = names(df),
   DataType = sapply(df, class),
   Median = sapply(df, median_numeric),
   StdDev = sapply(df, sd_numeric),
   NumMissing = sapply(df, function(x) sum(is.na(x)))
 )
 
-# Convert to a tibble for nicer printing, if desired
+# Display interactive table
 datatable(stats, options = list(pageLength = 5))
-#library("gridExtra")
-#grid.table(stats)
-#print(stats)
 ```
 
 ```{r}
@@ -96,6 +93,9 @@ boxplot(feature, horizontal=TRUE)
 A closer analysis shows that while some variables have very small standard deviations, others have standard deviations in the billions (e+09). The latter variables have extremely right-skewed distributions, with values ranging from zero to several billions. The box-plots of three sample variables are shown in Figure. The extreme values could be caused by human error in data collection, but the data source (Taiwan Economic Journal) is sufficiently reliable to rule out this possibility. Therefore, assuming that the data are correct, we could apply transformations (e.g. logarithmic) to the variables to shrink the extreme values towards the median. However, we decided not to apply any transformations beyond scaling the data to preserve the shape of the feature distributions, as outliers could be useful in identifying bankrupt companies.
 
 ```{r}
+# Show boxplots of three features
+
+# Show the three plots arranged in a column
 par(mfrow = c(3, 1))
 
 boxplot(df$'Quick Asset Turnover Rate',
@@ -190,21 +190,22 @@ Variables related to profit, efficiency, such as ROA (return on assets) and shar
 The correlation coefficients of the independent variables are mostly below 0.3 in absolute terms. Therefore, the features are only weakly positively correlated with the dependent variable. This is a common occurrence in economics and finance, as many factors affect the economic system. However, this does not necessarily mean that these variables and their interactions lack predictive power.
 
 ```{r}
-# Perforing Pearson Correlation Test on the Training Set
-# Defining empty dataframe to store the results: corr coefficients and p-values
+# Perform Pearson Correlation Test on the Training Set
+# Define empty dataframe to store the results: corr coefficients and p-values
 test_results <- data.frame()
 
-# iterate along the columns and compute correlation coefficent and p-value for each independent variable with the dependent variable
+# Iterate along the columns and compute correlation coefficent and p-value
+# for each independent variable with the dependent variable
 for (col in 1:(ncol(X_train) -1)) {
   result <- cor.test(Y_train, X_train[, col])
   result_df <- data.frame(index=colnames(X_train)[col], coeff=round(result$estimate,4), pvalue=round(result$p.value, 5))
   test_results <- rbind(test_results, result_df)
 }
-# Setting features names as row names
+# Set features names as row names
 row.names(test_results) <- test_results$index
 test_results$index <- NULL
 
-# Creating interactive table to visualize the results
+# Create interactive table to visualize the results
 # Features are sorted in descending order based on the correlation coefficient
 datatable(test_results[order(-test_results$coeff),], options = list(pageLength = 5))
 ```
@@ -216,10 +217,9 @@ In both correlation matrices, the variables were rearranged using hierarchical c
 In Figure we can see two main clusters: one of positively correlated features in the centre of the plot and one of negatively correlated features at the top. Other smaller clusters are also visible. Looking at Figure, these two clusters are even more obvious.
 
 ```{r}
-library(corrplot)
-#par(mfrow = c(1, 2))
+#| echo: false
+#| eval: false
 
-cor_matrix <- cor(X_train)
 Y_cor <-cor(X_train, Y_train, use = "complete.obs")
 index_order <- order(Y_cor, decreasing=TRUE)
 Y_cor_sorted <- Y_cor[index_order]
@@ -233,29 +233,37 @@ Y_cor_matrix <- matrix(Y_cor_sorted, nrow = length(Y_cor_sorted), ncol = 1, dimn
 # Plot correlation matrix
 #par(mar=c(2,2,2,2))  # Adjust margin to fit long variable names
 
-col <- colorRampPalette(c("blue", "white", "red"))(200)
-
 #corrplot(Y_cor_matrix, is.corr = FALSE, method = "color",
        #tl.col = "black", col=col, tl.cex = 0.6, tl.srt=0, cl.pos="n")
+```
 
+```{r}
+# Import library to show correlation plot
+library(corrplot)
+
+# Compute correlation matrix of the indenpendent variables
+# Correlation analysis is performed on train set only 
+cor_matrix <- cor(X_train)
+
+# Define custom color sequence from blue to red
+# Blue for negative correlation and red for positive correlation
+col <- colorRampPalette(c("blue", "white", "red"))(200)
+
+# Show correlation matrix
 corrplot(cor_matrix, method = "color", type = "upper",
-         tl.pos = "n",
+         tl.pos = "n", # Don't show features names
          diag = FALSE, # Exclude diagonal
          order = "hclust", # Order variables by hierarchical clustering
-         tl.col = "black", # Set text label color
-         #tl.cex = 0,
-         col=col)# Adjust text label size 
-
-#title("Correlation Matrix")
+         col=col) # Set custom color sequence 
 ```
 
 Some features are perfectly correlated:
 
 $Corr(Current\ Liability\ to\ Equity,\ Current\ Liabilities/Equity) = 1$
 
-$Corr(Current\ Liabilities\ to\ Liability,\ Current\ Liabilities/Liability) = 1$
+$Corr(Current\ Liability\ to\ Liability,\ Current\ Liabilities/Liability) = 1$
 
-$Corr(Debt\ Ratio, Net\ Worth/Assets) = -1$
+$Corr(Debt\ Ratio, Net\ worth/Assets) = -1$
 
 These variables seem to measure the same quantity, even if their names are slightly different. For each pair of perfectly correlated variables, it is necessary to select only one, as the other would complicate the models without providing any useful information.
 
@@ -280,20 +288,25 @@ high_cor_features <- which(apply(cor_matrix, 1, function(x) any(x > 0.9 | x < -0
 # Subset the correlation matrix
 sub_cor_matrix <- cor_matrix[high_cor_features, high_cor_features]
 
-# Define a custom color sequence from blue to red
+# Define custom color sequence from blue to red
 col <- colorRampPalette(c("blue", "white", "red"))(200)
 
 # Plot the subsetted correlation matrix
-#par(mar = c(0,0, 0, 0))
-
-#options(repr.plot.width=2, repr.plot.height=3)
 
 corrplot(sub_cor_matrix, method = "color", type="upper",
          order = "hclust", # Cluster variables
          addrect = 3, # Adjust the number of rectangles for clustering as needed
-         diag= FALSE,
+         diag= FALSE, # Exclude diagonal
          tl.col = "black", tl.srt = 45, tl.cex = 0.75, # Adjust text appearance
-         col = col) # Use the custom color sequence
+         col = col) # Set custom color sequence
+```
+
+```{r}
+# Remove on of two perfectly correlated features
+# Remove both in train and test set
+X_train <- subset(X_train, select= -c(`Current Liability to Equity`,`Current Liability to Liability`,`Net worth/Assets`))
+
+X_test <- subset(X_test, select= -c(`Current Liability to Equity`,`Current Liability to Liability`,`Net worth/Assets`))
 ```
 
 ## Dimensionality Reduction
@@ -301,7 +314,6 @@ corrplot(sub_cor_matrix, method = "color", type="upper",
 Dimensionality reduction by **Principal Components Analysis** (PCA) was performed on the training set and the Figure shows the first two principal components. We can see a large central cluster and several outliers. Some of the outliers correspond to bankrupt companies. We expect these data points to be easily classified correctly by econometric or machine learning models. However, most bankrupt firms are mixed with non-bankrupt firms in the central cluster. This means that these positive cases are close to the negative cases in the high dimensional space and are more difficult to classify correctly. However, it can be seen that almost all bankrupt companies have a negative value for the first principal component, suggesting that some separability of these cases is still possible.
 
 ```{r}
-library(ggplot2)
 # Perform PCA
 pca_result <- prcomp(X_train)
 
@@ -313,10 +325,12 @@ pc2 <- pca_result$x[, 2]
 pca_df <- data.frame(PC1 = pc1, PC2 = pc2, Y=factor(Y_train, labels = c("Non Bankrupt", "Bankrupt")))
 
 # Plot the first two principal components
+# Datapoints corresponding to bankrupt companies are in the foregound 
 ggplot(pca_df, aes(x = PC1, y = PC2)) +
   geom_point(data = pca_df[pca_df$Y == "Non Bankrupt", ], aes(color=Y)) +
   geom_point(data = pca_df[pca_df$Y == "Bankrupt", ], aes(color=Y)) +
   labs(x = "PC1", y = "PC2",col="Bankrupt?",title = "PCA: First Two Principal Components") +
+  theme(plot.title = element_text(hjust = 0.5))+
   theme_minimal()
 ```
 
