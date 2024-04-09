@@ -55,16 +55,12 @@ The table below shows three main descriptive statistics (type, mean, standard de
 
 All variables are numeric. This is an advantage for modelling as there is no need to encode categorical variables. Furthermore, there are no missing values in the dataset, so there is no need to impute values in the data handling phase.
 
-A closer look at the table shows that some variables have very small standard deviations. This means that the companies under consideration have very similar values for these variables or that the classes are highly imbalance.
-
-Finally, the variable *"Net Income Flag"* has a standard deviation equal to 0, as it takes the value 1 for all samples (all companies have negative net income for the last two years). This variable does not help in classification and must be removed as it causes errors in the calculation of correlations, PCA, etc.
-
 ```{r}
 # Calculate descriptive statistics
 
 # Define a function to calculate mean for numeric columns only
-mean_numeric <- function(x) {
-  if(is.numeric(x)) mean(x, na.rm = TRUE) else NA
+median_numeric <- function(x) {
+  if(is.numeric(x)) median(x, na.rm = TRUE) else NA
 }
 
 # Define a function to calculate standard deviation for numeric columns only
@@ -76,14 +72,51 @@ sd_numeric <- function(x) {
 stats <- data.frame(
   #Feature = names(df),
   DataType = sapply(df, class),
-  Mean = sapply(df, mean_numeric),
+  Median = sapply(df, median_numeric),
   StdDev = sapply(df, sd_numeric),
   NumMissing = sapply(df, function(x) sum(is.na(x)))
 )
 
 # Convert to a tibble for nicer printing, if desired
 datatable(stats, options = list(pageLength = 5))
+#library("gridExtra")
+#grid.table(stats)
+#print(stats)
 ```
+
+```{r}
+#| eval: false
+#| echo: false
+k <- log(max(df[,72]))/log(exp(1)-1)
+feature <- log(df[,72]^(1/k)+1)
+
+boxplot(feature, horizontal=TRUE)
+```
+
+A closer analysis shows that while some variables have very small standard deviations, others have standard deviations in the billions (e+09). The latter variables have extremely right-skewed distributions, with values ranging from zero to several billions. The box-plots of three sample variables are shown in Figure. The extreme values could be caused by human error in data collection, but the data source (Taiwan Economic Journal) is sufficiently reliable to rule out this possibility. Therefore, assuming that the data are correct, we could apply transformations (e.g. logarithmic) to the variables to shrink the extreme values towards the median. However, we decided not to apply any transformations beyond scaling the data to preserve the shape of the feature distributions, as outliers could be useful in identifying bankrupt companies.
+
+```{r}
+par(mfrow = c(3, 1))
+
+boxplot(df$'Quick Asset Turnover Rate',
+        main= "Sample Features Boxplots",
+        xlab="Quick Asset Turnover Rate",
+        col="darkmagenta",
+        horizontal=TRUE)
+
+
+boxplot(df$'Revenue per person',
+        xlab = "Revenue per person",
+        col="blue",
+        horizontal=TRUE)
+
+boxplot(df$'Long-term Liability to Current Assets',
+     xlab="Long-term Liability to Current Assets",
+     col="green",
+     horizontal=TRUE)
+```
+
+Finally, the variable *"Net Income Flag"* has a standard deviation equal to 0, as it takes the value 1 for all samples (all companies have negative net income for the last two years). This variable does not help in classification and must be removed as it causes errors in the calculation of correlations, PCA, etc.
 
 ```{r}
 #Removing zero variance variable "Net Income Flag"
@@ -91,12 +124,8 @@ df <- subset(df, select= -`Net Income Flag`)
 ```
 
 ```{r}
-#|echo: false
-hist(df$`Inventory Turnover Rate (times)`)
-```
-
-```{r}
 #| echo: false
+#| eval: false
 "original_names <- colnames(df)
 modified_names <- list()
 
@@ -110,8 +139,8 @@ for (index in seq(length(colnames(df)))) {
   
 }
 
-colnames(df) <- modified_names
-"
+colnames(df) <- modified_names"
+
 ```
 
 A key step is to divide the data into two sets: the training set and the test set.
@@ -265,17 +294,16 @@ corrplot(sub_cor_matrix, method = "color", type="upper",
          diag= FALSE,
          tl.col = "black", tl.srt = 45, tl.cex = 0.75, # Adjust text appearance
          col = col) # Use the custom color sequence
-
-# Add a title
-#title("Subset Correlation Matrix")
 ```
 
 ## Dimensionality Reduction
 
+Dimensionality reduction by **Principal Components Analysis** (PCA) was performed on the training set and the Figure shows the first two principal components. We can see a large central cluster and several outliers. Some of the outliers correspond to bankrupt companies. We expect these data points to be easily classified correctly by econometric or machine learning models. However, most bankrupt firms are mixed with non-bankrupt firms in the central cluster. This means that these positive cases are close to the negative cases in the high dimensional space and are more difficult to classify correctly. However, it can be seen that almost all bankrupt companies have a negative value for the first principal component, suggesting that some separability of these cases is still possible.
+
 ```{r}
 library(ggplot2)
 # Perform PCA
-pca_result <- prcomp(X_train) #, scale. = TRUE
+pca_result <- prcomp(X_train)
 
 # Extract the first two principal components
 pc1 <- pca_result$x[, 1]
@@ -285,14 +313,17 @@ pc2 <- pca_result$x[, 2]
 pca_df <- data.frame(PC1 = pc1, PC2 = pc2, Y=factor(Y_train, labels = c("Non Bankrupt", "Bankrupt")))
 
 # Plot the first two principal components
-ggplot(pca_df, aes(x = PC1, y = PC2, color=Y)) +
-  geom_point(alpha=0.7) +
-  labs(x = "Principal Component 1", y = "Principal Component 2", color='Y',title = "PCA: First Two Principal Components")
+ggplot(pca_df, aes(x = PC1, y = PC2)) +
+  geom_point(data = pca_df[pca_df$Y == "Non Bankrupt", ], aes(color=Y)) +
+  geom_point(data = pca_df[pca_df$Y == "Bankrupt", ], aes(color=Y)) +
+  labs(x = "PC1", y = "PC2",col="Bankrupt?",title = "PCA: First Two Principal Components") +
+  theme_minimal()
 ```
 
 ```{r}
-# warning: false
+#| warning: false
 #| eval: false
+#| echo: false
 library(Rtsne)
 
 # Perform t-SNE
@@ -308,6 +339,7 @@ ggplot(tsne_df, aes(x = X1, y = X2, color = Y)) +
 
 ```{r}
 #| eval: false
+#| echo: false
 #Exporting train and test sets
 #library(openxlsx)
 
