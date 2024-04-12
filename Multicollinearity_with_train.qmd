@@ -1,0 +1,116 @@
+---
+title: "Bankruptcy prediction"
+author: "Ruixuan"
+format: html
+editor: visual
+---
+
+1.  **Import dataset**
+
+    ```{r}
+    library(readxl)
+    train <- read_excel("train.xlsx")
+    #rowdata <- read.xlsx("data.xlsx")
+    ```
+
+2.  **Descriptive statistics**
+
+    ```{r}
+    dim(rowdata)
+    is.matrix(rowdata)
+    is.data.frame(rowdata)
+    table(is.na(rowdata))
+
+    summary(rowdata)
+    summary(train)
+    ```
+
+3.  **Training set multicollinearity test**
+
+    ```{r}
+    ### Temporary rename trainset data variables to train model
+    ### Store original names to rename columns later
+    original_names <- colnames(train)
+    temporary_names <- list()
+
+    temporary_names <- c(temporary_names, 'Y')
+
+    for (i in 2:ncol(train)) {
+      
+      temporary_names <- c(temporary_names, paste0('X',as.character(i-1)))
+    }
+
+    colnames(train) <- temporary_names
+    ```
+
+    ```{r}
+    ### Build linear model
+
+    train_lm <- lm(Y ~ ., data = train)
+
+    # Check for perfectly collinear independent variables
+    # Remove them as they cause an error in the VIF calculation
+    ld.vars <- attributes(alias(train_lm)$Complete)$dimnames[[1]]
+
+    # Create new formula
+    formula.new <- as.formula(paste("Y ~.", paste(ld.vars, sep="-"), sep= "-"))
+
+    # Create new linear model without perfectly collinear variables
+    train_lm <- lm(formula.new, data = train)
+    ```
+
+    ```{r}
+    #| warning: false
+
+    ### Compute VIF values ###
+    library(car)
+    train_vif_value <- vif(train_lm)
+
+    # Plot VIF values for each independent variable
+    print(train_vif_value)
+
+    # Select variables with VIF > 10
+    train_variable_to_remove <- names(train_vif_value)[train_vif_value > 10]
+
+    ### Remove these variables 
+    train <- train[, !names(train) %in% train_variable_to_remove]
+
+    # Reset original variables names
+    colnames(train) <- original_names[temporary_names %in% colnames(train)]
+    ```
+
+    ```{r}
+
+    par(mfrow=c(2, 2))
+
+    plot(train_processed_lm)
+
+    vif_table <- data.frame(variable = names(train_vif_value), vif = train_vif_value)
+
+    library(ggplot2)
+    p <- ggplot(vif_table, aes(x = variable, y = vif)) +
+      geom_bar(stat="identity") +
+      geom_hline(yintercept = 10, linetype = "dashed", color = "red") +  # VIF 
+      xlab("Variable") +
+      ylab("VIF") +
+      ylim(0, 20)
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+    ggsave('D:/University of Birmingham/Big data management/Group assignment/plot_vif.png', plot = p, width = 6, height = 4, units = "in")
+    ```
+
+    ```{r}
+    ### Farrar-Glauber Test ###
+    library(mctest)
+    train_omcdiag_result <- omcdiag(train)
+
+    train_imcdiag_result <- imcdiag(train)
+    ```
+
+4.  **Export the processed_df file as csv**
+
+    ```{r}
+    # Save new train set
+    library(openxlsx)
+    write.csv(train, 'D:/University of Birmingham/Big data management/Group assignment/train.csv', row.names = FALSE)
+    ```
