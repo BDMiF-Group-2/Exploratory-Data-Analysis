@@ -18,7 +18,7 @@ library(dplyr)
 #
 library(caret)
 #
-library(DT)
+#library(DT)
 #
 library(ggplot2)
 theme_update(plot.title = element_text(hjust = 0.5))
@@ -71,6 +71,7 @@ sd_numeric <- function(x) {
 
 # Calculate the statistics and store them in a data frame
 stats <- data.frame(
+  Feature = colnames(df),
   DataType = sapply(df, class),
   Median = sapply(df, median_numeric),
   StdDev = sapply(df, sd_numeric),
@@ -78,7 +79,12 @@ stats <- data.frame(
 )
 
 # Display interactive table
-datatable(stats, options = list(pageLength = 5))
+#datatable(stats, options = list(pageLength = 5))
+```
+
+```{r}
+library(insight)
+export_table(format_table(stats), format='html')
 ```
 
 ```{r}
@@ -207,7 +213,11 @@ test_results$index <- NULL
 
 # Create interactive table to visualize the results
 # Features are sorted in descending order based on the correlation coefficient
-datatable(test_results[order(-test_results$coeff),], options = list(pageLength = 5))
+#datatable(test_results[order(-test_results$coeff),], options = list(pageLength = 5))
+test_results <- test_results[order(-test_results$coeff),]
+test_results <- cbind(rownames(test_results), test_results)
+colnames(test_results)[1] <- "Feature"
+export_table(format_table(test_results), format='html')
 ```
 
 Figure shows the correlation matrix of the independent variables. The names of the variables have been omitted to avoid cluttering the graph. The Figure shows the correlation matrix of the variables that have a correlation coefficient greater than or equal to 0.9 in absolute terms with any other independent variable.
